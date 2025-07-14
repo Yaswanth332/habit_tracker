@@ -1,6 +1,7 @@
 import React from 'react';
 import { StreakDisplay } from './StreakDisplay';
 import { TaskManager } from './TaskManager';
+import { DatabaseSetup } from './DatabaseSetup';
 import { useData } from '../contexts/DataContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Clock, Target, Briefcase, TrendingUp } from 'lucide-react';
@@ -30,6 +31,9 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Database Setup */}
+      <DatabaseSetup />
+
       {/* Streak Display */}
       <StreakDisplay />
 

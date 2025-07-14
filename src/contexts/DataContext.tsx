@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { DatabaseService } from '../services/DatabaseService';
+import { connectToDatabase } from '../config/database';
 
 export interface Task {
   id: string;
@@ -49,14 +51,17 @@ interface DataContextType {
   workSessions: WorkSession[];
   reflections: Reflection[];
   totalStreak: number;
-  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'streak'>) => void;
-  updateTask: (id: string, updates: Partial<Task>) => void;
-  deleteTask: (id: string) => void;
-  toggleTask: (id: string) => void;
-  addGoal: (goal: Omit<Goal, 'id'>) => void;
-  updateGoalProgress: (id: string, progress: number) => void;
-  addWorkSession: (session: Omit<WorkSession, 'id'>) => void;
-  addReflection: (reflection: Omit<Reflection, 'id'>) => void;
+  isLoading: boolean;
+  error: string | null;
+  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'streak'>) => Promise<void>;
+  updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
+  toggleTask: (id: string) => Promise<void>;
+  addGoal: (goal: Omit<Goal, 'id'>) => Promise<void>;
+  updateGoalProgress: (id: string, progress: number) => Promise<void>;
+  addWorkSession: (session: Omit<WorkSession, 'id'>) => Promise<void>;
+  addReflection: (reflection: Omit<Reflection, 'id'>) => Promise<void>;
+  initializeDatabase: (config?: any) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -70,149 +75,265 @@ export const useData = () => {
 };
 
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: '1',
-      title: 'Revise Linked Lists',
-      type: 'daily',
-      completed: true,
-      streak: 3,
-      category: 'DSA',
-      emoji: '🔗',
-      priority: 'high',
-      tags: ['coding', 'interview-prep'],
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: '2',
-      title: 'Finish Lab Report',
-      type: 'weekly',
-      completed: false,
-      streak: 0,
-      category: 'Physics',
-      emoji: '⚗️',
-      dueDate: '2025-01-15',
-      priority: 'high',
-      tags: ['lab', 'assignment'],
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: '3',
-      title: 'Drink 8 glasses of water',
-      type: 'daily',
-      completed: false,
-      streak: 5,
-      category: 'Health',
-      emoji: '💧',
-      priority: 'medium',
-      tags: ['health', 'habit'],
-      createdAt: new Date().toISOString()
-    }
-  ]);
-
-  const [goals, setGoals] = useState<Goal[]>([
-    {
-      id: '1',
-      title: 'Complete DSA Course',
-      description: 'Finish 70% of the Data Structures and Algorithms course before semester ends',
-      deadline: '2025-05-15',
-      progress: 45,
-      subtasks: ['Arrays & Strings', 'Linked Lists', 'Trees', 'Graphs', 'Dynamic Programming'],
-      category: 'Academic',
-      motivationalQuote: 'Code is poetry written in logic! 💻✨'
-    },
-    {
-      id: '2',
-      title: 'Build Portfolio Website',
-      description: 'Create a professional portfolio to showcase projects',
-      deadline: '2025-03-01',
-      progress: 20,
-      subtasks: ['Design mockups', 'Frontend development', 'Deploy to Vercel'],
-      category: 'Career'
-    }
-  ]);
-
-  const [workSessions, setWorkSessions] = useState<WorkSession[]>([
-    {
-      id: '1',
-      project: 'DSA Practice',
-      duration: 120,
-      tags: ['coding', 'leetcode'],
-      date: new Date().toISOString().split('T')[0],
-      notes: 'Solved 5 medium problems on binary trees',
-      mood: '🧠'
-    },
-    {
-      id: '2',
-      project: 'React Portfolio',
-      duration: 90,
-      tags: ['frontend', 'react'],
-      date: new Date().toISOString().split('T')[0],
-      notes: 'Built the hero section with animations',
-      mood: '🚀'
-    }
-  ]);
-
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
   const [reflections, setReflections] = useState<Reflection[]>([]);
-  const [totalStreak, setTotalStreak] = useState(7);
+  const [totalStreak, setTotalStreak] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  const addTask = (task: Omit<Task, 'id' | 'createdAt' | 'streak'>) => {
-    const newTask = {
-      ...task,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-      streak: 0
-    };
-    setTasks(prev => [newTask, ...prev]);
-  };
-
-  const updateTask = (id: string, updates: Partial<Task>) => {
-    setTasks(prev => prev.map(task => 
-      task.id === id ? { ...task, ...updates } : task
-    ));
-  };
-
-  const deleteTask = (id: string) => {
-    setTasks(prev => prev.filter(task => task.id !== id));
-  };
-
-  const toggleTask = (id: string) => {
-    setTasks(prev => prev.map(task => {
-      if (task.id === id) {
-        const newCompleted = !task.completed;
-        const newStreak = newCompleted ? task.streak + 1 : Math.max(0, task.streak - 1);
-        return { ...task, completed: newCompleted, streak: newStreak };
-      }
-      return task;
-    }));
-    
-    // Update total streak
-    const completedTasks = tasks.filter(t => t.completed).length;
-    if (completedTasks > 0) {
-      setTotalStreak(prev => prev + 1);
+  const initializeDatabase = async (config?: any) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      await connectToDatabase(config);
+      await loadAllData();
+      setIsInitialized(true);
+      
+      console.log('Database initialized successfully');
+    } catch (err) {
+      console.error('Failed to initialize database:', err);
+      setError('Failed to connect to database. Using local data.');
+      // Load sample data if database connection fails
+      loadSampleData();
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const addGoal = (goal: Omit<Goal, 'id'>) => {
-    const newGoal = { ...goal, id: Date.now().toString() };
-    setGoals(prev => [newGoal, ...prev]);
+  const loadAllData = async () => {
+    try {
+      const [tasksData, goalsData, workSessionsData, reflectionsData, streakData] = await Promise.all([
+        DatabaseService.getAllTasks(),
+        DatabaseService.getAllGoals(),
+        DatabaseService.getAllWorkSessions(),
+        DatabaseService.getAllReflections(),
+        DatabaseService.getTotalStreak()
+      ]);
+
+      setTasks(tasksData);
+      setGoals(goalsData);
+      setWorkSessions(workSessionsData);
+      setReflections(reflectionsData);
+      setTotalStreak(streakData);
+    } catch (err) {
+      console.error('Failed to load data:', err);
+      throw err;
+    }
   };
 
-  const updateGoalProgress = (id: string, progress: number) => {
-    setGoals(prev => prev.map(goal => 
-      goal.id === id ? { ...goal, progress } : goal
-    ));
+  const loadSampleData = () => {
+    // Fallback sample data when database is not available
+    setTasks([
+      {
+        id: '1',
+        title: 'Revise Linked Lists',
+        type: 'daily',
+        completed: true,
+        streak: 3,
+        category: 'DSA',
+        emoji: '🔗',
+        priority: 'high',
+        tags: ['coding', 'interview-prep'],
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: '2',
+        title: 'Finish Lab Report',
+        type: 'weekly',
+        completed: false,
+        streak: 0,
+        category: 'Physics',
+        emoji: '⚗️',
+        dueDate: '2025-01-15',
+        priority: 'high',
+        tags: ['lab', 'assignment'],
+        createdAt: new Date().toISOString()
+      }
+    ]);
+
+    setGoals([
+      {
+        id: '1',
+        title: 'Complete DSA Course',
+        description: 'Finish 70% of the Data Structures and Algorithms course before semester ends',
+        deadline: '2025-05-15',
+        progress: 45,
+        subtasks: ['Arrays & Strings', 'Linked Lists', 'Trees', 'Graphs', 'Dynamic Programming'],
+        category: 'Academic',
+        motivationalQuote: 'Code is poetry written in logic! 💻✨'
+      }
+    ]);
+
+    setWorkSessions([
+      {
+        id: '1',
+        project: 'DSA Practice',
+        duration: 120,
+        tags: ['coding', 'leetcode'],
+        date: new Date().toISOString().split('T')[0],
+        notes: 'Solved 5 medium problems on binary trees',
+        mood: '🧠'
+      }
+    ]);
+
+    setTotalStreak(7);
   };
 
-  const addWorkSession = (session: Omit<WorkSession, 'id'>) => {
-    const newSession = { ...session, id: Date.now().toString() };
-    setWorkSessions(prev => [newSession, ...prev]);
+  const addTask = async (task: Omit<Task, 'id' | 'createdAt' | 'streak'>) => {
+    try {
+      if (isInitialized) {
+        const id = await DatabaseService.createTask(task);
+        const newTask = {
+          ...task,
+          id,
+          createdAt: new Date().toISOString(),
+          streak: 0
+        };
+        setTasks(prev => [newTask, ...prev]);
+      } else {
+        // Fallback to local state
+        const newTask = {
+          ...task,
+          id: Date.now().toString(),
+          createdAt: new Date().toISOString(),
+          streak: 0
+        };
+        setTasks(prev => [newTask, ...prev]);
+      }
+    } catch (err) {
+      console.error('Failed to add task:', err);
+      setError('Failed to add task');
+    }
   };
 
-  const addReflection = (reflection: Omit<Reflection, 'id'>) => {
-    const newReflection = { ...reflection, id: Date.now().toString() };
-    setReflections(prev => [newReflection, ...prev]);
+  const updateTask = async (id: string, updates: Partial<Task>) => {
+    try {
+      if (isInitialized) {
+        await DatabaseService.updateTask(id, updates);
+      }
+      setTasks(prev => prev.map(task => 
+        task.id === id ? { ...task, ...updates } : task
+      ));
+    } catch (err) {
+      console.error('Failed to update task:', err);
+      setError('Failed to update task');
+    }
   };
+
+  const deleteTask = async (id: string) => {
+    try {
+      if (isInitialized) {
+        await DatabaseService.deleteTask(id);
+      }
+      setTasks(prev => prev.filter(task => task.id !== id));
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+      setError('Failed to delete task');
+    }
+  };
+
+  const toggleTask = async (id: string) => {
+    try {
+      const task = tasks.find(t => t.id === id);
+      if (!task) return;
+
+      const newCompleted = !task.completed;
+      const newStreak = newCompleted ? task.streak + 1 : Math.max(0, task.streak - 1);
+      
+      const updates = { completed: newCompleted, streak: newStreak };
+      
+      if (isInitialized) {
+        await DatabaseService.updateTask(id, updates);
+      }
+      
+      setTasks(prev => prev.map(t => 
+        t.id === id ? { ...t, ...updates } : t
+      ));
+      
+      // Update total streak
+      if (newCompleted) {
+        const newTotalStreak = totalStreak + 1;
+        setTotalStreak(newTotalStreak);
+        if (isInitialized) {
+          await DatabaseService.updateTotalStreak(newTotalStreak);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to toggle task:', err);
+      setError('Failed to toggle task');
+    }
+  };
+
+  const addGoal = async (goal: Omit<Goal, 'id'>) => {
+    try {
+      if (isInitialized) {
+        const id = await DatabaseService.createGoal(goal);
+        const newGoal = { ...goal, id };
+        setGoals(prev => [newGoal, ...prev]);
+      } else {
+        const newGoal = { ...goal, id: Date.now().toString() };
+        setGoals(prev => [newGoal, ...prev]);
+      }
+    } catch (err) {
+      console.error('Failed to add goal:', err);
+      setError('Failed to add goal');
+    }
+  };
+
+  const updateGoalProgress = async (id: string, progress: number) => {
+    try {
+      if (isInitialized) {
+        await DatabaseService.updateGoalProgress(id, progress);
+      }
+      setGoals(prev => prev.map(goal => 
+        goal.id === id ? { ...goal, progress } : goal
+      ));
+    } catch (err) {
+      console.error('Failed to update goal progress:', err);
+      setError('Failed to update goal progress');
+    }
+  };
+
+  const addWorkSession = async (session: Omit<WorkSession, 'id'>) => {
+    try {
+      if (isInitialized) {
+        const id = await DatabaseService.createWorkSession(session);
+        const newSession = { ...session, id };
+        setWorkSessions(prev => [newSession, ...prev]);
+      } else {
+        const newSession = { ...session, id: Date.now().toString() };
+        setWorkSessions(prev => [newSession, ...prev]);
+      }
+    } catch (err) {
+      console.error('Failed to add work session:', err);
+      setError('Failed to add work session');
+    }
+  };
+
+  const addReflection = async (reflection: Omit<Reflection, 'id'>) => {
+    try {
+      if (isInitialized) {
+        const id = await DatabaseService.createReflection(reflection);
+        const newReflection = { ...reflection, id };
+        setReflections(prev => [newReflection, ...prev]);
+      } else {
+        const newReflection = { ...reflection, id: Date.now().toString() };
+        setReflections(prev => [newReflection, ...prev]);
+      }
+    } catch (err) {
+      console.error('Failed to add reflection:', err);
+      setError('Failed to add reflection');
+    }
+  };
+
+  // Initialize with sample data on mount
+  useEffect(() => {
+    loadSampleData();
+  }, []);
 
   return (
     <DataContext.Provider value={{
@@ -221,6 +342,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       workSessions,
       reflections,
       totalStreak,
+      isLoading,
+      error,
       addTask,
       updateTask,
       deleteTask,
@@ -228,7 +351,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       addGoal,
       updateGoalProgress,
       addWorkSession,
-      addReflection
+      addReflection,
+      initializeDatabase
     }}>
       {children}
     </DataContext.Provider>
