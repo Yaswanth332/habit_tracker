@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { DatabaseService } from '../services/DatabaseService';
-import { connectToDatabase } from '../config/database';
+import { connectToDatabase, initializeSchema } from '../config/database';
 
 export interface Task {
   id: string;
@@ -53,6 +53,7 @@ interface DataContextType {
   totalStreak: number;
   isLoading: boolean;
   error: string | null;
+  isConnectedToDatabase: boolean;
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'streak'>) => Promise<void>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
@@ -80,25 +81,31 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
   const [reflections, setReflections] = useState<Reflection[]>([]);
   const [totalStreak, setTotalStreak] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [isConnectedToDatabase, setIsConnectedToDatabase] = useState(false);
 
   const initializeDatabase = async (config?: any) => {
     try {
       setIsLoading(true);
       setError(null);
       
+      console.log('Initializing database connection...');
       await connectToDatabase(config);
-      await loadAllData();
-      setIsInitialized(true);
       
+      console.log('Initializing database schema...');
+      await initializeSchema(config);
+      
+      console.log('Loading data from database...');
+      await loadAllData();
+      
+      setIsConnectedToDatabase(true);
       console.log('Database initialized successfully');
     } catch (err) {
       console.error('Failed to initialize database:', err);
-      setError('Failed to connect to database. Using local data.');
-      // Load sample data if database connection fails
-      loadSampleData();
+      setError(`Failed to connect to database: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setIsConnectedToDatabase(false);
+      // Don't load sample data here - let user fix connection
     } finally {
       setIsLoading(false);
     }
@@ -126,7 +133,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const loadSampleData = () => {
-    // Fallback sample data when database is not available
+    // Sample data for when database is not connected
     setTasks([
       {
         id: '1',
@@ -185,7 +192,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addTask = async (task: Omit<Task, 'id' | 'createdAt' | 'streak'>) => {
     try {
-      if (isInitialized) {
+      if (isConnectedToDatabase) {
         const id = await DatabaseService.createTask(task);
         const newTask = {
           ...task,
@@ -212,7 +219,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateTask = async (id: string, updates: Partial<Task>) => {
     try {
-      if (isInitialized) {
+      if (isConnectedToDatabase) {
         await DatabaseService.updateTask(id, updates);
       }
       setTasks(prev => prev.map(task => 
@@ -226,7 +233,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteTask = async (id: string) => {
     try {
-      if (isInitialized) {
+      if (isConnectedToDatabase) {
         await DatabaseService.deleteTask(id);
       }
       setTasks(prev => prev.filter(task => task.id !== id));
@@ -246,7 +253,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       const updates = { completed: newCompleted, streak: newStreak };
       
-      if (isInitialized) {
+      if (isConnectedToDatabase) {
         await DatabaseService.updateTask(id, updates);
       }
       
@@ -258,7 +265,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (newCompleted) {
         const newTotalStreak = totalStreak + 1;
         setTotalStreak(newTotalStreak);
-        if (isInitialized) {
+        if (isConnectedToDatabase) {
           await DatabaseService.updateTotalStreak(newTotalStreak);
         }
       }
@@ -270,7 +277,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addGoal = async (goal: Omit<Goal, 'id'>) => {
     try {
-      if (isInitialized) {
+      if (isConnectedToDatabase) {
         const id = await DatabaseService.createGoal(goal);
         const newGoal = { ...goal, id };
         setGoals(prev => [newGoal, ...prev]);
@@ -286,7 +293,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateGoalProgress = async (id: string, progress: number) => {
     try {
-      if (isInitialized) {
+      if (isConnectedToDatabase) {
         await DatabaseService.updateGoalProgress(id, progress);
       }
       setGoals(prev => prev.map(goal => 
@@ -300,7 +307,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addWorkSession = async (session: Omit<WorkSession, 'id'>) => {
     try {
-      if (isInitialized) {
+      if (isConnectedToDatabase) {
         const id = await DatabaseService.createWorkSession(session);
         const newSession = { ...session, id };
         setWorkSessions(prev => [newSession, ...prev]);
@@ -316,7 +323,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addReflection = async (reflection: Omit<Reflection, 'id'>) => {
     try {
-      if (isInitialized) {
+      if (isConnectedToDatabase) {
         const id = await DatabaseService.createReflection(reflection);
         const newReflection = { ...reflection, id };
         setReflections(prev => [newReflection, ...prev]);
@@ -330,10 +337,12 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Initialize with sample data on mount
+  // Initialize with sample data on mount (when database is not connected)
   useEffect(() => {
-    loadSampleData();
-  }, []);
+    if (!isConnectedToDatabase) {
+      loadSampleData();
+    }
+  }, [isConnectedToDatabase]);
 
   return (
     <DataContext.Provider value={{
@@ -344,6 +353,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       totalStreak,
       isLoading,
       error,
+      isConnectedToDatabase,
       addTask,
       updateTask,
       deleteTask,
