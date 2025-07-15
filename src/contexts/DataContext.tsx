@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { DatabaseService } from '../services/DatabaseService';
-import { connectToDatabase, initializeSchema } from '../config/database';
 
 export interface Task {
   id: string;
@@ -83,29 +82,23 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [totalStreak, setTotalStreak] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isConnectedToDatabase, setIsConnectedToDatabase] = useState(false);
+  const [isConnectedToDatabase, setIsConnectedToDatabase] = useState(true); // Always true for localStorage
 
   const initializeDatabase = async (config?: any) => {
     try {
       setIsLoading(true);
       setError(null);
       
-      console.log('Initializing database connection...');
-      await connectToDatabase(config);
-      
-      console.log('Initializing database schema...');
-      await initializeSchema(config);
-      
-      console.log('Loading data from database...');
+      console.log('Initializing localStorage...');
       await loadAllData();
       
       setIsConnectedToDatabase(true);
-      console.log('Database initialized successfully');
+      console.log('LocalStorage initialized successfully');
     } catch (err) {
-      console.error('Failed to initialize database:', err);
-      setError(`Failed to connect to database: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      console.error('Failed to initialize localStorage:', err);
+      setError(`Failed to initialize storage: ${err instanceof Error ? err.message : 'Unknown error'}`);
       setIsConnectedToDatabase(false);
-      // Don't load sample data here - let user fix connection
+      loadSampleData();
     } finally {
       setIsLoading(false);
     }
@@ -133,7 +126,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const loadSampleData = () => {
-    // Sample data for when database is not connected
+    // Sample data for initial setup
     setTasks([
       {
         id: '1',
@@ -192,25 +185,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addTask = async (task: Omit<Task, 'id' | 'createdAt' | 'streak'>) => {
     try {
-      if (isConnectedToDatabase) {
-        const id = await DatabaseService.createTask(task);
-        const newTask = {
-          ...task,
-          id,
-          createdAt: new Date().toISOString(),
-          streak: 0
-        };
-        setTasks(prev => [newTask, ...prev]);
-      } else {
-        // Fallback to local state
-        const newTask = {
-          ...task,
-          id: Date.now().toString(),
-          createdAt: new Date().toISOString(),
-          streak: 0
-        };
-        setTasks(prev => [newTask, ...prev]);
-      }
+      const id = await DatabaseService.createTask(task);
+      const newTask = {
+        ...task,
+        id,
+        createdAt: new Date().toISOString(),
+        streak: 0
+      };
+      setTasks(prev => [newTask, ...prev]);
     } catch (err) {
       console.error('Failed to add task:', err);
       setError('Failed to add task');
@@ -219,9 +201,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateTask = async (id: string, updates: Partial<Task>) => {
     try {
-      if (isConnectedToDatabase) {
-        await DatabaseService.updateTask(id, updates);
-      }
+      await DatabaseService.updateTask(id, updates);
       setTasks(prev => prev.map(task => 
         task.id === id ? { ...task, ...updates } : task
       ));
@@ -233,9 +213,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const deleteTask = async (id: string) => {
     try {
-      if (isConnectedToDatabase) {
-        await DatabaseService.deleteTask(id);
-      }
+      await DatabaseService.deleteTask(id);
       setTasks(prev => prev.filter(task => task.id !== id));
     } catch (err) {
       console.error('Failed to delete task:', err);
@@ -253,9 +231,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       const updates = { completed: newCompleted, streak: newStreak };
       
-      if (isConnectedToDatabase) {
-        await DatabaseService.updateTask(id, updates);
-      }
+      await DatabaseService.updateTask(id, updates);
       
       setTasks(prev => prev.map(t => 
         t.id === id ? { ...t, ...updates } : t
@@ -265,9 +241,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (newCompleted) {
         const newTotalStreak = totalStreak + 1;
         setTotalStreak(newTotalStreak);
-        if (isConnectedToDatabase) {
-          await DatabaseService.updateTotalStreak(newTotalStreak);
-        }
+        await DatabaseService.updateTotalStreak(newTotalStreak);
       }
     } catch (err) {
       console.error('Failed to toggle task:', err);
@@ -277,14 +251,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addGoal = async (goal: Omit<Goal, 'id'>) => {
     try {
-      if (isConnectedToDatabase) {
-        const id = await DatabaseService.createGoal(goal);
-        const newGoal = { ...goal, id };
-        setGoals(prev => [newGoal, ...prev]);
-      } else {
-        const newGoal = { ...goal, id: Date.now().toString() };
-        setGoals(prev => [newGoal, ...prev]);
-      }
+      const id = await DatabaseService.createGoal(goal);
+      const newGoal = { ...goal, id };
+      setGoals(prev => [newGoal, ...prev]);
     } catch (err) {
       console.error('Failed to add goal:', err);
       setError('Failed to add goal');
@@ -293,9 +262,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateGoalProgress = async (id: string, progress: number) => {
     try {
-      if (isConnectedToDatabase) {
-        await DatabaseService.updateGoalProgress(id, progress);
-      }
+      await DatabaseService.updateGoalProgress(id, progress);
       setGoals(prev => prev.map(goal => 
         goal.id === id ? { ...goal, progress } : goal
       ));
@@ -307,14 +274,9 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addWorkSession = async (session: Omit<WorkSession, 'id'>) => {
     try {
-      if (isConnectedToDatabase) {
-        const id = await DatabaseService.createWorkSession(session);
-        const newSession = { ...session, id };
-        setWorkSessions(prev => [newSession, ...prev]);
-      } else {
-        const newSession = { ...session, id: Date.now().toString() };
-        setWorkSessions(prev => [newSession, ...prev]);
-      }
+      const id = await DatabaseService.createWorkSession(session);
+      const newSession = { ...session, id };
+      setWorkSessions(prev => [newSession, ...prev]);
     } catch (err) {
       console.error('Failed to add work session:', err);
       setError('Failed to add work session');
@@ -323,26 +285,19 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const addReflection = async (reflection: Omit<Reflection, 'id'>) => {
     try {
-      if (isConnectedToDatabase) {
-        const id = await DatabaseService.createReflection(reflection);
-        const newReflection = { ...reflection, id };
-        setReflections(prev => [newReflection, ...prev]);
-      } else {
-        const newReflection = { ...reflection, id: Date.now().toString() };
-        setReflections(prev => [newReflection, ...prev]);
-      }
+      const id = await DatabaseService.createReflection(reflection);
+      const newReflection = { ...reflection, id };
+      setReflections(prev => [newReflection, ...prev]);
     } catch (err) {
       console.error('Failed to add reflection:', err);
       setError('Failed to add reflection');
     }
   };
 
-  // Initialize with sample data on mount (when database is not connected)
+  // Initialize with data on mount
   useEffect(() => {
-    if (!isConnectedToDatabase) {
-      loadSampleData();
-    }
-  }, [isConnectedToDatabase]);
+    initializeDatabase();
+  }, []);
 
   return (
     <DataContext.Provider value={{

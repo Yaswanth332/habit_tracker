@@ -1,222 +1,114 @@
-import { getConnection } from '../config/database';
+import { LocalStorageService } from '../config/database';
 import { Task, Goal, WorkSession, Reflection } from '../contexts/DataContext';
 import { v4 as uuidv4 } from 'uuid';
 
 export class DatabaseService {
   // Tasks
   static async getAllTasks(): Promise<Task[]> {
-    const connection = getConnection();
-    const [rows] = await connection.execute(`
-      SELECT id, title, type, completed, streak, category, emoji, 
-             due_date as dueDate, priority, tags, created_at as createdAt
-      FROM tasks 
-      ORDER BY created_at DESC
-    `);
-    
-    return (rows as any[]).map(row => ({
-      ...row,
-      tags: JSON.parse(row.tags || '[]'),
-      completed: Boolean(row.completed)
-    }));
+    const tasks = LocalStorageService.getData('tasks') || [];
+    return tasks.sort((a: Task, b: Task) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   static async createTask(task: Omit<Task, 'id' | 'createdAt' | 'streak'>): Promise<string> {
-    const connection = getConnection();
     const id = uuidv4();
-    
-    await connection.execute(`
-      INSERT INTO tasks (id, title, type, completed, streak, category, emoji, due_date, priority, tags)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
+    const newTask = {
+      ...task,
       id,
-      task.title,
-      task.type,
-      task.completed,
-      0,
-      task.category,
-      task.emoji,
-      task.dueDate || null,
-      task.priority,
-      JSON.stringify(task.tags)
-    ]);
+      createdAt: new Date().toISOString(),
+      streak: 0
+    };
+    
+    const tasks = await this.getAllTasks();
+    tasks.unshift(newTask);
+    LocalStorageService.saveData('tasks', tasks);
     
     return id;
   }
 
   static async updateTask(id: string, updates: Partial<Task>): Promise<void> {
-    const connection = getConnection();
-    const fields = [];
-    const values = [];
+    const tasks = await this.getAllTasks();
+    const taskIndex = tasks.findIndex(task => task.id === id);
     
-    if (updates.title !== undefined) {
-      fields.push('title = ?');
-      values.push(updates.title);
-    }
-    if (updates.completed !== undefined) {
-      fields.push('completed = ?');
-      values.push(updates.completed);
-    }
-    if (updates.streak !== undefined) {
-      fields.push('streak = ?');
-      values.push(updates.streak);
-    }
-    if (updates.category !== undefined) {
-      fields.push('category = ?');
-      values.push(updates.category);
-    }
-    if (updates.emoji !== undefined) {
-      fields.push('emoji = ?');
-      values.push(updates.emoji);
-    }
-    if (updates.dueDate !== undefined) {
-      fields.push('due_date = ?');
-      values.push(updates.dueDate || null);
-    }
-    if (updates.priority !== undefined) {
-      fields.push('priority = ?');
-      values.push(updates.priority);
-    }
-    if (updates.tags !== undefined) {
-      fields.push('tags = ?');
-      values.push(JSON.stringify(updates.tags));
-    }
-    
-    if (fields.length > 0) {
-      values.push(id);
-      await connection.execute(`
-        UPDATE tasks SET ${fields.join(', ')} WHERE id = ?
-      `, values);
+    if (taskIndex !== -1) {
+      tasks[taskIndex] = { ...tasks[taskIndex], ...updates };
+      LocalStorageService.saveData('tasks', tasks);
     }
   }
 
   static async deleteTask(id: string): Promise<void> {
-    const connection = getConnection();
-    await connection.execute('DELETE FROM tasks WHERE id = ?', [id]);
+    const tasks = await this.getAllTasks();
+    const filteredTasks = tasks.filter(task => task.id !== id);
+    LocalStorageService.saveData('tasks', filteredTasks);
   }
 
   // Goals
   static async getAllGoals(): Promise<Goal[]> {
-    const connection = getConnection();
-    const [rows] = await connection.execute(`
-      SELECT id, title, description, deadline, progress, subtasks, category, motivational_quote as motivationalQuote
-      FROM goals 
-      ORDER BY created_at DESC
-    `);
-    
-    return (rows as any[]).map(row => ({
-      ...row,
-      subtasks: JSON.parse(row.subtasks || '[]')
-    }));
+    const goals = LocalStorageService.getData('goals') || [];
+    return goals;
   }
 
   static async createGoal(goal: Omit<Goal, 'id'>): Promise<string> {
-    const connection = getConnection();
     const id = uuidv4();
+    const newGoal = { ...goal, id };
     
-    await connection.execute(`
-      INSERT INTO goals (id, title, description, deadline, progress, subtasks, category, motivational_quote)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      id,
-      goal.title,
-      goal.description,
-      goal.deadline,
-      goal.progress,
-      JSON.stringify(goal.subtasks),
-      goal.category,
-      goal.motivationalQuote || null
-    ]);
+    const goals = await this.getAllGoals();
+    goals.unshift(newGoal);
+    LocalStorageService.saveData('goals', goals);
     
     return id;
   }
 
   static async updateGoalProgress(id: string, progress: number): Promise<void> {
-    const connection = getConnection();
-    await connection.execute('UPDATE goals SET progress = ? WHERE id = ?', [progress, id]);
+    const goals = await this.getAllGoals();
+    const goalIndex = goals.findIndex(goal => goal.id === id);
+    
+    if (goalIndex !== -1) {
+      goals[goalIndex].progress = progress;
+      LocalStorageService.saveData('goals', goals);
+    }
   }
 
   // Work Sessions
   static async getAllWorkSessions(): Promise<WorkSession[]> {
-    const connection = getConnection();
-    const [rows] = await connection.execute(`
-      SELECT id, project, duration, tags, date, notes, mood
-      FROM work_sessions 
-      ORDER BY date DESC, created_at DESC
-    `);
-    
-    return (rows as any[]).map(row => ({
-      ...row,
-      tags: JSON.parse(row.tags || '[]')
-    }));
+    const sessions = LocalStorageService.getData('workSessions') || [];
+    return sessions.sort((a: WorkSession, b: WorkSession) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
   static async createWorkSession(session: Omit<WorkSession, 'id'>): Promise<string> {
-    const connection = getConnection();
     const id = uuidv4();
+    const newSession = { ...session, id };
     
-    await connection.execute(`
-      INSERT INTO work_sessions (id, project, duration, tags, date, notes, mood)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [
-      id,
-      session.project,
-      session.duration,
-      JSON.stringify(session.tags),
-      session.date,
-      session.notes,
-      session.mood || null
-    ]);
+    const sessions = await this.getAllWorkSessions();
+    sessions.unshift(newSession);
+    LocalStorageService.saveData('workSessions', sessions);
     
     return id;
   }
 
   // Reflections
   static async getAllReflections(): Promise<Reflection[]> {
-    const connection = getConnection();
-    const [rows] = await connection.execute(`
-      SELECT id, date, prompt, response, mood
-      FROM reflections 
-      ORDER BY date DESC, created_at DESC
-    `);
-    
-    return rows as Reflection[];
+    const reflections = LocalStorageService.getData('reflections') || [];
+    return reflections.sort((a: Reflection, b: Reflection) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
   static async createReflection(reflection: Omit<Reflection, 'id'>): Promise<string> {
-    const connection = getConnection();
     const id = uuidv4();
+    const newReflection = { ...reflection, id };
     
-    await connection.execute(`
-      INSERT INTO reflections (id, date, prompt, response, mood)
-      VALUES (?, ?, ?, ?, ?)
-    `, [
-      id,
-      reflection.date,
-      reflection.prompt,
-      reflection.response,
-      reflection.mood
-    ]);
+    const reflections = await this.getAllReflections();
+    reflections.unshift(newReflection);
+    LocalStorageService.saveData('reflections', reflections);
     
     return id;
   }
 
   // User Settings
   static async getTotalStreak(): Promise<number> {
-    const connection = getConnection();
-    const [rows] = await connection.execute(`
-      SELECT setting_value FROM user_settings WHERE setting_key = 'total_streak'
-    `);
-    
-    const result = rows as any[];
-    return result.length > 0 ? parseInt(result[0].setting_value) : 0;
+    const streak = LocalStorageService.getData('totalStreak');
+    return streak ? parseInt(streak) : 0;
   }
 
   static async updateTotalStreak(streak: number): Promise<void> {
-    const connection = getConnection();
-    await connection.execute(`
-      INSERT INTO user_settings (setting_key, setting_value) 
-      VALUES ('total_streak', ?) 
-      ON DUPLICATE KEY UPDATE setting_value = ?
-    `, [streak.toString(), streak.toString()]);
+    LocalStorageService.saveData('totalStreak', streak.toString());
   }
 }
